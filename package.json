@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "electron-vite dev",
     "dev:sidecar": "node scripts/dev-sidecar.mjs",
+    "sidecar:doctor": ".venv/bin/python sidecar/main.py --mode doctor",
+    "sidecar:models": ".venv/bin/python scripts/fetch_dev_models.py",
+    "sidecar:fixtures": ".venv/bin/python scripts/make_test_fixtures.py",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "format": "prettier --write .",

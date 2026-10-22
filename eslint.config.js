@@ -13,6 +13,7 @@ export default tseslint.config(
       'resources',
       'coverage',
       '.opencode',
+      '.venv',
       'native',
       'sidecar',
       'scripts/**/*.mjs'

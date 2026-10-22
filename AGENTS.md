@@ -4,13 +4,14 @@
 
 `floating-app` is the implementation repo for **fispeak**: a cross-platform Electron "dynamic island" (always-on-top pill) with a local Python sidecar for offline speech translation (faster-whisper STT -> NLLB-200 MT -> Kokoro TTS), plus clock, notes, pomodoro, AI meeting summary, and transcript export.
 
-## Current state (verified 2026-10-22, Phase 1 complete)
+## Current state (verified 2026-10-22, Phase 1 + Phase 2 complete)
 
-- Phase 1 (Electron UI shell) is **implemented and verified at runtime on macOS**: pill island with hover expand, quick notes (SQLite, max 50), pomodoro with notification, tray, global hotkeys, panel window, settings persistence. No audio/AI yet.
-- Entry points: `electron/main.ts` (main), `preload/index.ts` (typed `window.fispeak` bridge), `src/main.tsx` (renderer; `src/index.html` = island, `src/panel.html` = panel). Contract lives in `shared/api.ts`; card sizes/timing in `shared/island.ts`.
-- `scripts/` holds `generate-tray-icons.mjs` (PNG tray icons, no third-party binaries) and `dev-sidecar.mjs` (honest Phase 2 placeholder).
+- Phase 1 (Electron UI shell) is **implemented and verified at runtime on macOS**: pill island with hover expand, quick notes (SQLite, max 50), pomodoro with notification, tray, global hotkeys, panel window, settings persistence.
+- Phase 2 (Python sidecar) is **implemented and verified**: `sidecar/` FastAPI service with exactly `/health`, `/languages`, `/ws`, `/shutdown`; faster-whisper STT (anti-hallucination) + NLLB-200 CT2 MT behind an abstract engine; CLI smoke tools; 33 pytest green; Electron spawns/reuses/shuts it down via `electron/sidecar/sidecarManager.ts`. Still no audio capture and no translate UI (Phase 3).
+- Entry points: `electron/main.ts` (main), `preload/index.ts` (typed `window.fispeak` bridge), `src/main.tsx` (renderer; `src/index.html` = island, `src/panel.html` = panel). Contract lives in `shared/api.ts`; card sizes/timing in `shared/island.ts`; sidecar entry `sidecar/main.py` (`--mode normal|doctor`).
+- `scripts/` holds `generate-tray-icons.mjs` (PNG tray icons), `dev-sidecar.mjs` (real sidecar launcher), `fetch_dev_models.py` (dev model download), `make_test_fixtures.py` (macOS `say` fixtures), `ws_test_client.py` (manual WS client).
 - Git is initialized by the owner; **the agent does not commit**. `.opencode/package.json` + `.opencode/node_modules` are OpenCode tooling, **not** the app manifest.
-- Planned, not implemented yet: `sidecar/` (Phase 2), model downloads + audio (Phase 3), TTS/summary/export (Phase 4), packaging artifacts (Phase 5).
+- Planned, not implemented yet: per-OS audio capture + live translate UI (Phase 3), TTS/summary/export (Phase 4), packaging artifacts (Phase 5).
 
 ## Spec lives outside the repo
 
@@ -19,9 +20,10 @@ Authoritative, owner-approved spec: `/Users/adyfas/Documents/Obsidian Vault/fisp
 Read in this order before any implementation work:
 1. `README.md` - index + final decisions (stack is final; do not re-litigate)
 2. `PROGRESS.md` - cross-agent state; read first, append after every milestone (never delete entries)
-3. `11-roadmap.md` - phase order + acceptance criteria
-4. The doc for the area you touch (`01`-`14`, e.g. `09-sidecar-spec`, `04-ui-spec`).
-5. `04b-ui-notchnook-reference.md` - if the work touches the island UI, read this before `04-ui-spec`; it is the NotchNook-derived visual and window-mechanics reference.
+3. `TASKS.md` - checklist backlog: what is done, what is still open per phase
+4. `11-roadmap.md` - phase order + acceptance criteria
+5. The doc for the area you touch (`01`-`14`, e.g. `09-sidecar-spec`, `04-ui-spec`).
+6. `04b-ui-notchnook-reference.md` - if the work touches the island UI, read this before `04-ui-spec`; it is the NotchNook-derived visual and window-mechanics reference.
 
 Every doc corrected on 2026-10-22 carries a trailing `CORRECTION` section. Read those sections - they supersede the older text above them (e.g. Kokoro's real ONNX repo, the whisper/NLLB file lists, the final sidecar REST surface, the resampling rule for sidecar-native capture paths).
 
@@ -62,6 +64,10 @@ If the vault path is missing, stop and ask the owner. Never invent or reconstruc
 - Pomodoro countdown is deadline-based (`PomodoroSnapshot.endsAt`); the renderer interpolates locally every 500 ms. Do not re-introduce `startedAt` + an already-decremented `remainingMs`, that double subtraction makes the clock run 2x (Phase 1 bug).
 - Notch detection: `display.workArea.y >= 30` first, then the built-in panel aspect ratio (`internal && 1.5 < width/height < 1.58`) for auto-hidden menu bars. Both are heuristics; the Swift helper (Phase 3) replaces them.
 - Roadmap acceptance criteria say `npm run ...`; treat `13-dev-env.md` as authoritative: **pnpm** (`npm` only if pnpm is a hard blocker). Single test: `pnpm vitest run <path>`, `.venv/bin/pytest <test> -q`.
+- **Python must be 3.11** (`/opt/homebrew/bin/python3.11`); the machine default `python3` is 3.14 and breaks the wheels. The venv lives in `.venv` (gitignored) and the models in `userData/models` (~1.1 GB, download once with `pnpm sidecar:models`).
+- The sidecar takes an **exclusive flock** on `userData/sidecar.lock`; a second sidecar on the same data dir refuses to start. `electron/sidecar/sidecarManager.ts` therefore reuses a healthy sidecar instead of spawning a second one.
+- `app.quit()` does not finish the quit when `before-quit` was prevented; the main process calls `cleanup()` + `app.exit(0)` itself (see `electron/main.ts`) so the app can never get stuck un-quittable.
+- STT latency on this machine: ~9.7 s for 30 s of audio with `cpu_threads = cpu_count // 2` (threads 2 -> 17.9 s, threads 8 -> 20.9 s). If Phase 3 feels slow, lower `beam_size` (2 -> 1) before touching the thread count.
 
 ## Commands
 
@@ -74,12 +80,15 @@ Verified in Phase 1 (pnpm 10, Node 24, macOS arm64). The roadmap's `npm run ...`
 - `pnpm build` - typecheck + electron-vite build into `out/` (`main`, `preload`, `renderer/index.html`, `renderer/panel.html`)
 - `pnpm dist` / `pnpm dist:all` - electron-builder (Phase 5; icons still missing)
 - `pnpm icons` - regenerate `resources/icons/trayTemplate*.png`
-- `pnpm dev:sidecar` - deliberately exits with a Phase 2 message until `sidecar/main.py` exists
-- `pnpm test:sidecar` - `.venv/bin/pytest sidecar/tests -q` (Phase 2)
+- `pnpm dev:sidecar` - runs the Python sidecar in dev mode (needs `.venv` + models)
+- `pnpm test:sidecar` - `.venv/bin/pytest sidecar/tests -q` (33 tests, needs the models)
+- `pnpm sidecar:doctor` - `.venv/bin/python sidecar/main.py --mode doctor` (JSON diagnostics)
+- `pnpm sidecar:models` - `.venv/bin/python scripts/fetch_dev_models.py` (whisper small + NLLB int8)
+- `pnpm sidecar:fixtures` - `.venv/bin/python scripts/make_test_fixtures.py` (regenerate the wav fixtures)
 
 Bootstrap: `pnpm install` (pnpm 10 blocks build scripts unless `pnpm.onlyBuiltDependencies` lists `better-sqlite3`, `electron`, `esbuild`; if the Electron binary is missing run `node node_modules/electron/install.js`). better-sqlite3 13 ships N-API prebuilds, so no electron-rebuild step is needed; `pnpm exec electron-builder install-app-deps` is the fallback.
 
-Sidecar commands (Phase 2+, not runnable yet): `.venv/bin/pytest sidecar/tests/test_mt_en_id.py -q`, `python sidecar/engine/stt_cli.py --file sidecar/tests/fixtures/en_meeting_30s.wav`, `python sidecar/engine/mt_cli.py --text "..." --src ind_Latn --tgt eng_Latn`, `python scripts/fetch_dev_models.py`, `python sidecar/main.py --mode doctor`.
+Sidecar commands: `.venv/bin/pytest sidecar/tests/test_mt_en_id.py -q`, `.venv/bin/python sidecar/engine/stt_cli.py --file sidecar/tests/fixtures/en_meeting_30s.wav`, `.venv/bin/python sidecar/engine/mt_cli.py --text "..." --src ind_Latn --tgt eng_Latn`, `.venv/bin/python scripts/ws_test_client.py --file sidecar/tests/fixtures/en_meeting_30s.wav --tag remote --my-lang id`, `.venv/bin/python sidecar/main.py --mode doctor`.
 
 Dev env vars: `FISPEAK_DEBUG=1`, `FISPEAK_SIDECAR_PORT`, `FISPEAK_MODELS_DIR`, `HF_TOKEN` (optional, for HF mirror rate limits). Electron dev renderer port 5173, Ollama 11434.
 

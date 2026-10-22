@@ -1,0 +1,10 @@
+# fispeak Python sidecar (Phase 2). Python 3.11 only - the machine default 3.14 is too new.
+# Dev install: /opt/homebrew/bin/python3.11 -m venv .venv && .venv/bin/pip install -r sidecar/requirements.txt
+fastapi>=0.115,<1
+uvicorn[standard]>=0.32,<1
+numpy>=1.26,<3
+faster-whisper>=1.1,<2
+ctranslate2>=4.4,<5
+transformers>=4.44,<5
+soundfile>=0.12,<1
+huggingface-hub>=0.26,<1

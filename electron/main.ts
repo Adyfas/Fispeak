@@ -11,6 +11,7 @@ import { closeDb } from './db/db'
 import { PomodoroController } from './pomodoro'
 import { registerIpc } from './ipc'
 import { logger } from './logger'
+import { SidecarManager } from './sidecar/sidecarManager'
 
 const isMac = process.platform === 'darwin'
 
@@ -22,6 +23,7 @@ let island: IslandWindow | null = null
 let panel: PanelWindow | null = null
 let tray: AppTray | null = null
 let pomodoro: PomodoroController | null = null
+let sidecar: SidecarManager | null = null
 let translateOn = false
 
 function broadcast(channel: string, payload: unknown): void {
@@ -131,6 +133,16 @@ app.whenReady().then(() => {
   tray = appTray
   pomodoro = pomodoroController
 
+  // Phase 2: the Python sidecar owns the AI audio engines. It is spawned (or reused) in the
+  // background; the UI only needs it from Phase 3 on, so a failure must never block startup.
+  const sidecarManager = new SidecarManager((status, detail) => {
+    logger.info('sidecar', `status: ${status}`, detail)
+  })
+  sidecar = sidecarManager
+  void sidecarManager.start().then((port) => {
+    if (port) logger.info('main', 'sidecar available', { port })
+  })
+
   // First run: open the panel so the welcome stub is visible (Phase 1 only; models come later).
   if (!settingsStore.get().firstRunDone) openPanel('settings')
 
@@ -140,12 +152,39 @@ app.whenReady().then(() => {
 // Tray app: closing every window must not quit.
 app.on('window-all-closed', () => {})
 
-app.on('will-quit', () => {
+// Graceful sidecar shutdown: `/shutdown` first, hard kill as the safety net
+// (09-sidecar-spec §1.2, 14-risks-notes §2 - no zombie sidecars).
+let sidecarStopped = false
+let cleanedUp = false
+
+function cleanup(): void {
+  if (cleanedUp) return
+  cleanedUp = true
   unregisterShortcuts()
   pomodoro?.dispose()
   tray?.destroy()
   island?.destroy()
   panel?.destroy()
+  sidecar?.kill()
   closeDb()
   logger.info('main', 'fispeak quitting')
+}
+
+app.on('before-quit', (event) => {
+  if (sidecar && !sidecarStopped && sidecar.getStatus() === 'running') {
+    event.preventDefault()
+    logger.info('main', 'sidecar shutdown started')
+    void sidecar
+      .stop()
+      .catch((error) => logger.warn('main', 'sidecar shutdown failed', { error: String(error) }))
+      .finally(() => {
+        sidecarStopped = true
+        cleanup()
+        app.exit(0)
+      })
+  }
+})
+
+app.on('will-quit', () => {
+  cleanup()
 })

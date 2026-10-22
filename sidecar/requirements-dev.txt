@@ -1,0 +1,5 @@
+# Dev/test only. Installed with the same venv as requirements.txt.
+-r requirements.txt
+pytest>=8,<9
+httpx>=0.27,<1
+websockets>=13,<16
