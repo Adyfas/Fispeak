@@ -1,0 +1,24 @@
+appId: app.fispeak
+productName: fispeak
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+asarUnpack:
+  - resources/**/*
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+  hardenedRuntime: false
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility

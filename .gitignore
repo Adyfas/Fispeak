@@ -1,0 +1,52 @@
+# Created by https://www.toptal.com/developers/gitignore/api/react,vercel
+# Edit at https://www.toptal.com/developers/gitignore?templates=react,vercel
+
+### react ###
+.DS_*
+*.log
+logs
+**/*.backup.*
+**/*.back.
+
+node_modules
+bower_components
+.env
+
+*.sublime*
+
+psd
+thumb
+sketch
+
+### Vercel ###
+.vercel
+
+# End of https://www.toptal.com/developers/gitignore/api/react,vercel
+
+### fispeak / electron-vite / python ###
+out
+dist
+dist_common
+release
+*.tsbuildinfo
+.eslintcache
+coverage
+
+# native helpers + generated binaries (built per-OS, never committed)
+resources/bin
+native/**/build
+native/**/prebuilds/*.node
+native/**/.build
+
+# python sidecar
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+sidecar/**/dist
+sidecar/**/build
+
+# local model / data dirs (never inside the repo)
+models
+sidecar.port
+sidecar.lock

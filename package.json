@@ -1,0 +1,59 @@
+{
+  "name": "fispeak",
+  "version": "0.1.0",
+  "private": true,
+  "description": "fispeak - offline meeting translator that lives in a dynamic island",
+  "author": "fispeak",
+  "license": "UNLICENSED",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:sidecar": "node scripts/dev-sidecar.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:sidecar": ".venv/bin/pytest sidecar/tests -q",
+    "build": "pnpm typecheck && electron-vite build",
+    "dist": "pnpm build && electron-builder",
+    "dist:all": "pnpm build && electron-builder -mwl",
+    "icons": "node scripts/generate-tray-icons.mjs",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "electron", "esbuild"]
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "better-sqlite3": "^13.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^24.10.1",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "jsdom": "^30.1.3",
+    "prettier": "^3.9.10",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.0",
+    "vite": "^7.3.7",
+    "vitest": "^5.0.5"
+  }
+}
