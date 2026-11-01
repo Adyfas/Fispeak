@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./public/icon/FISPEAK.png" alt="fispeak logo" width="170" />
+  <img src="public/icon/FISPEAK.png" alt="fispeak logo" width="170" />
 </p>
 
 <h1 align="center">fispeak</h1>
