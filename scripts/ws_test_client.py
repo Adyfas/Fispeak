@@ -60,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
         help="append this much silence so the VAD closes the window and the transcript is emitted",
     )
     parser.add_argument("--timeout", type=float, default=120.0, help="seconds to wait for events")
+    parser.add_argument("--beam", type=int, default=5, help="beam size for STT and MT")
+    parser.add_argument("--max-window-ms", type=int, default=14_000)
+    parser.add_argument("--silence-ms", type=int, default=1_400)
+    parser.add_argument("--min-speech-ms", type=int, default=1_000)
     args = parser.parse_args(argv)
 
     from websockets.sync.client import connect
@@ -87,8 +91,11 @@ def main(argv: list[str] | None = None) -> int:
                     "remote_lang": args.remote_lang,
                     "session_id": args.session_id,
                     "tts_enabled": False,
-                    "beam_size": 2,
+                    "beam_size": args.beam,
                     "whisper_model": "small",
+                    "vad_max_window_ms": args.max_window_ms,
+                    "vad_silence_ms": args.silence_ms,
+                    "vad_min_speech_ms": args.min_speech_ms,
                 }
             )
         )

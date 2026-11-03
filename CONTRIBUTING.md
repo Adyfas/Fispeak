@@ -1,8 +1,8 @@
 # Contributing to fispeak
 
-Thanks for taking the time to contribute. fispeak is an offline-first desktop app, so a healthy
-contribution is one that keeps it **local, small, and predictable**. This guide is intentionally
-short: fork, branch, build, test, open a pull request.
+Thanks for taking the time to contribute. fispeak is a cross-platform desktop app with local-first AI
+and optional remote engines, so a healthy contribution keeps it **private, small, and
+predictable**. This guide is intentionally short: fork, branch, build, test, open a pull request.
 
 By participating, you agree to be respectful and constructive. Harassment, personal attacks, and
 dismissive behaviour are not welcome.
@@ -60,8 +60,9 @@ Keep pull requests focused. One concern per PR is easier to review and easier to
 
 ## Development setup
 
-Requirements are listed in the [README](README.md#requirements). In short: macOS 13+, Node 20+,
-pnpm 10, Python 3.11, and ffmpeg.
+Requirements are listed in the [README](README.md#requirements). In short: macOS 13+, Windows 10+,
+or Linux with PulseAudio/PipeWire; Node 20+, pnpm 10, Python 3.11, and ffmpeg. The macOS capture
+path is the one currently verified; Windows and Linux capture are in progress.
 
 ```bash
 pnpm install
@@ -104,7 +105,9 @@ Guidelines:
 - **Respect the process boundaries.** The renderer never talks to the Python sidecar directly.
   It uses the preload/IPC bridge; the main process owns windows, the database, audio, and network
   calls.
-- **Stay local-first.** Do not add telemetry, analytics, or hidden network calls. Any feature that
+- **Stay local-first, not local-only.** Local engines are the default so nothing leaves the
+  machine without an explicit choice. Remote OpenAI-compatible engines are a supported,
+  first-class option. Do not add telemetry, analytics, or hidden network calls. Any feature that
   sends data off the machine must be opt-in and documented.
 - **Keep the island small.** UI text should be short and simple. New pages belong in the feature
   rail; avoid adding dashboard-style clutter.
@@ -157,7 +160,7 @@ A useful bug report includes:
 
 - what you expected and what actually happened,
 - steps to reproduce,
-- your macOS version and Mac model (Apple Silicon or Intel),
+- your OS and version (on macOS, also the Mac model and whether it is Apple Silicon or Intel),
 - the relevant log lines (the terminal running `pnpm dev`, or the app log file),
 - a screenshot or recording for UI issues.
 

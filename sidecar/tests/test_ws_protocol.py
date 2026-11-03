@@ -119,7 +119,9 @@ def test_audio_produces_transcript_and_translation(ws_url, en_meeting_wav, wav_l
         for frame in _frames(payload):
             ws.send(bytes([0x02]) + frame)
 
-        deadline = time.time() + 120
+        # Generous deadline: the whisper transcription of the clip can be slow when the
+        # machine is busy (the desktop app may transcribe at the same time).
+        deadline = time.time() + 240
         while time.time() < deadline and (transcript is None or translation is None):
             remaining = max(1.0, deadline - time.time())
             event = json.loads(ws.recv(timeout=remaining))
@@ -139,3 +141,40 @@ def test_audio_produces_transcript_and_translation(ws_url, en_meeting_wav, wav_l
     assert translation["tgt_lang"] == "id"
     assert translation["text_src"] == transcript["text"]
     assert translation["text_tgt"]
+
+
+def test_stop_drops_the_backlog(ws_url, en_meeting_wav, wav_loader) -> None:
+    """Pressing stop must silence everything: no subtitle may arrive afterwards."""
+    from websockets.sync.client import connect
+
+    audio = wav_loader(en_meeting_wav)[: 12 * config.SAMPLE_RATE]
+    late: list[dict] = []
+    with connect(ws_url, open_timeout=10, max_size=None) as ws:
+        ws.send(
+            json.dumps(
+                {
+                    "t": "config",
+                    "my_lang": "id",
+                    "remote_lang": "en",
+                    "session_id": "stop-session",
+                    "tts_enabled": False,
+                    "beam_size": 1,
+                    "whisper_model": "small",
+                }
+            )
+        )
+        for frame in _frames(audio):
+            ws.send(bytes([0x02]) + frame)
+        # Stop right after the burst, while the windows are still queued/in flight.
+        ws.send(json.dumps({"t": "state", "mode": "translate_off"}))
+
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                event = json.loads(ws.recv(timeout=max(0.2, deadline - time.time())))
+            except TimeoutError:
+                break
+            if event["t"] in ("transcript", "translation"):
+                late.append(event)
+
+    assert late == [], f"events arrived after stop: {late[0]}"

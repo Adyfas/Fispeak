@@ -77,6 +77,36 @@ def whisper_codes() -> list[str]:
     return [lang.whisper for lang in LANGUAGES]
 
 
+# Providers return a mix of ISO codes, BCP-47 tags ("id-ID"), FLORES codes and full English
+# names ("Indonesian"). Normalise all of them to the Whisper code the pipeline uses.
+_NAME_ALIASES: dict[str, str] = {lang.label.lower(): lang.whisper for lang in LANGUAGES}
+_NAME_ALIASES.update(
+    {
+        "bahasa": "id",
+        "bahasa indonesia": "id",
+        "mandarin": "zh",
+        "castilian": "es",
+    }
+)
+
+
+def normalize(code: str | None) -> str | None:
+    """Anything a provider calls a language -> a known Whisper code (or None)."""
+    raw = _clean(code)
+    cleaned = raw.lower().replace("_", "-")
+    if not cleaned or cleaned in (AUTO, "unknown"):
+        return None
+    # `by_flores` keeps the underscore (`eng_Latn`), `by_whisper` never has one.
+    lang = by_whisper(cleaned) or by_flores(cleaned) or by_flores(raw)
+    if lang:
+        return lang.whisper
+    base = cleaned.split("-")[0]
+    lang = by_whisper(base) or by_flores(base)
+    if lang:
+        return lang.whisper
+    return _NAME_ALIASES.get(cleaned) or _NAME_ALIASES.get(base)
+
+
 def as_dict() -> dict[str, object]:
     """Payload for `GET /languages` (shape fixed by 09-sidecar-spec §2)."""
     return {

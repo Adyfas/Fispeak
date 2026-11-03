@@ -14,6 +14,7 @@ export default tseslint.config(
       'coverage',
       '.opencode',
       '.venv',
+      '.venv-tts',
       'native',
       'sidecar',
       'scripts/**/*.mjs'
@@ -31,6 +32,18 @@ export default tseslint.config(
       ...reactHooks.configs.recommended.rules,
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }]
+    }
+  },
+  {
+    // AudioWorklet globals only exist inside the worklet scope.
+    files: ['src/audio/**/*.js'],
+    languageOptions: {
+      globals: {
+        AudioWorkletProcessor: 'readonly',
+        registerProcessor: 'readonly',
+        sampleRate: 'readonly',
+        currentFrame: 'readonly'
+      }
     }
   }
 )

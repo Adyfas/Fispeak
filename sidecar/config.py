@@ -64,6 +64,10 @@ MT_MODEL_FILES = ("config.json", "model.bin", "shared_vocabulary.json", "tokeniz
 # Rolling VAD defaults (06-stt-engine §4.1).
 VAD_SILENCE_FRAMES = 20  # 20 x 200 ms = 4 s of silence closes a window
 VAD_MIN_SPEECH_FRAMES = 15  # 3 s minimum; see CORRECTION note (do not lower without A/B data)
-VAD_MAX_WINDOW_MS = 30_000
+# Max window before the speech is cut and processed. 06-stt-engine §4.1 said 30 s, but with
+# continuous speech (a meeting, a video) the first line then only arrives after 30 s - see the
+# CORRECTION section in 06-stt-engine.md (2026-10-22). Lowered again to 6 s so live subtitles
+# of a continuous video arrive every few seconds instead of every 15 s.
+VAD_MAX_WINDOW_MS = 6_000
 VAD_OVERLAP_MS = 800
 VAD_RMS_FLOOR = 0.004

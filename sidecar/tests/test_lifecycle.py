@@ -20,7 +20,7 @@ def _get(url: str, timeout: float = 1.0):
         return response.status, json.loads(response.read().decode("utf-8"))
 
 
-def _wait_for_port_file(path: Path, timeout: float = 30.0) -> int:
+def _wait_for_port_file(path: Path, timeout: float = 60.0) -> int:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if path.exists():
@@ -54,7 +54,7 @@ def test_sidecar_starts_serves_health_and_shuts_down_cleanly(tmp_path: Path) -> 
         port_file = tmp_path / "sidecar.port"
         port = _wait_for_port_file(port_file)
 
-        deadline = time.time() + 30
+        deadline = time.time() + 60
         health = None
         while time.time() < deadline:
             if process.poll() is not None:

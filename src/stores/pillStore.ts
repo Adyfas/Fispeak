@@ -13,8 +13,8 @@ export type PillEvent =
   | 'show'
 
 /**
- * Pure island state machine (04-ui-spec §3). No extra states are allowed; every visual
- * change must be expressible through these six.
+ * Pure island state machine (04-ui-spec §3). Feature pages, list/speak and prompt dictation
+ * each have an explicit state; every visual change must be expressible through these.
  */
 export function nextPillState(current: IslandState, event: PillEvent): IslandState {
   switch (event) {

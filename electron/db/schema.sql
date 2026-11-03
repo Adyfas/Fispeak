@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS notes (
   id TEXT PRIMARY KEY,
   body TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  pinned INTEGER DEFAULT 0
+  pinned INTEGER DEFAULT 0,
+  items TEXT
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -15,14 +16,32 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
+  status TEXT DEFAULT 'active',
   my_lang TEXT,
   remote_lang TEXT,
   whisper_model TEXT,
   nllb_model TEXT,
+  tts_model TEXT,
+  tts_voice TEXT,
   turn_count INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS takes (
+  id TEXT PRIMARY KEY,
+  session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+  idx INTEGER NOT NULL,
+  mode TEXT CHECK (mode IN ('listen', 'speak')) DEFAULT 'listen',
+  merged_source TEXT,
+  merged_translation TEXT,
+  tts_model TEXT,
+  tts_voice TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_takes_session ON takes (session_id, idx);
 
 CREATE TABLE IF NOT EXISTS turns (
   id TEXT PRIMARY KEY,

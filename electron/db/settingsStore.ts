@@ -1,5 +1,6 @@
 import type { Settings } from '@shared/api'
-import { DEFAULT_SETTINGS } from '@shared/api'
+import { DEFAULT_SETTINGS, resolveEngineSettings } from '@shared/api'
+import { resolveAiSettings } from '@shared/providers'
 import { getDb } from './db'
 
 const SETTINGS_KEY = 'app'
@@ -26,15 +27,53 @@ export class SettingsStore {
     if (!this.cache) {
       const raw = readRow(SETTINGS_KEY)
       let stored: Partial<Settings> = {}
+      let legacy: Record<string, unknown> = {}
       if (raw) {
         try {
-          stored = JSON.parse(raw) as Partial<Settings>
+          legacy = JSON.parse(raw) as Record<string, unknown>
+          stored = legacy as Partial<Settings>
         } catch {
           stored = {}
+          legacy = {}
         }
       }
-      // Defaults win over unknown/missing keys; new settings added later stay backwards compatible.
-      this.cache = { ...DEFAULT_SETTINGS, ...stored }
+      // Migration: one provider now owns every task. Old databases keep their provider/models.
+      const legacyEngines = resolveEngineSettings(
+        legacy.engines as Parameters<typeof resolveEngineSettings>[0]
+      )
+      const ai = resolveAiSettings({
+        ai: stored.ai,
+        engines: legacyEngines,
+        ttsModel: stored.ttsModel,
+        promptAiProvider: stored.promptAiProvider,
+        promptAiModel: stored.promptAiModel,
+        promptAiBaseUrl: stored.promptAiBaseUrl
+      })
+      const { engines: _legacyEngines, ...rest } = legacy as Partial<Settings> & {
+        engines?: unknown
+      }
+      void _legacyEngines
+      this.cache = {
+        ...DEFAULT_SETTINGS,
+        ...(rest as Partial<Settings>),
+        ai
+      }
+      // JSON nulls from older builds must not override the new enum defaults.
+      if (!this.cache.sidecarKeepAlive) this.cache.sidecarKeepAlive = DEFAULT_SETTINGS.sidecarKeepAlive
+      if (!this.cache.ttsOutput) this.cache.ttsOutput = DEFAULT_SETTINGS.ttsOutput
+      if (this.cache.speakAutoPlay == null) this.cache.speakAutoPlay = DEFAULT_SETTINGS.speakAutoPlay
+      if (this.cache.dictationAutoPaste == null) {
+        this.cache.dictationAutoPaste = DEFAULT_SETTINGS.dictationAutoPaste
+      }
+      if (this.cache.promptAiEnabled == null) {
+        this.cache.promptAiEnabled = DEFAULT_SETTINGS.promptAiEnabled
+      }
+      if (!this.cache.promptAiProvider) {
+        this.cache.promptAiProvider = DEFAULT_SETTINGS.promptAiProvider
+      }
+      if (!this.cache.promptAiModel) {
+        this.cache.promptAiModel = DEFAULT_SETTINGS.promptAiModel
+      }
     }
     return { ...this.cache }
   }

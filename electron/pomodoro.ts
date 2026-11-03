@@ -1,14 +1,17 @@
 import { Notification } from 'electron'
-import type { PomodoroMode, PomodoroSnapshot } from '@shared/api'
-import {
-  FOCUS_MS,
-  FOCUS_ROUNDS_BEFORE_LONG_BREAK,
-  durationFor
-} from '@shared/pomodoro'
+import type { PomodoroConfig, PomodoroMode, PomodoroSnapshot } from '@shared/api'
+import { DEFAULT_POMODORO_CONFIG, durationFor, sanitizePomodoroConfig } from '@shared/pomodoro'
 import { readJsonSetting, writeJsonSetting } from './db/settingsStore'
 import { logger } from './logger'
 
-export { FOCUS_MS, SHORT_BREAK_MS, LONG_BREAK_MS, FOCUS_ROUNDS_BEFORE_LONG_BREAK, durationFor } from '@shared/pomodoro'
+export {
+  DEFAULT_POMODORO_CONFIG,
+  FOCUS_MS,
+  SHORT_BREAK_MS,
+  LONG_BREAK_MS,
+  FOCUS_ROUNDS_BEFORE_LONG_BREAK,
+  durationFor
+} from '@shared/pomodoro'
 
 const STORAGE_KEY = 'pomodoro'
 /** A phase that ended while the app was closed for a long time is not worth a notification. */
@@ -17,8 +20,10 @@ const STALE_PHASE_MS = 60_000
 interface StoredPomodoro {
   mode: PomodoroMode
   remainingMs: number
+  totalMs?: number
   completedFocus: number
   endsAt: number | null
+  config?: Partial<PomodoroConfig>
 }
 
 function notificationFor(mode: PomodoroMode): { title: string; body: string } {
@@ -29,10 +34,15 @@ function notificationFor(mode: PomodoroMode): { title: string; body: string } {
 /**
  * Countdown is deadline-based: the renderer interpolates from `endsAt`, so a 1 s tick can
  * never make the clock drift or run twice as fast (the Phase 1 bug).
+ *
+ * Durations are owner-editable (`configure`) and the phase can be switched by hand
+ * (`setMode`), which is what the island's focus card drives.
  */
 export class PomodoroController {
   private mode: PomodoroMode = 'idle'
-  private remainingMs = FOCUS_MS
+  private config: PomodoroConfig = { ...DEFAULT_POMODORO_CONFIG }
+  private remainingMs = DEFAULT_POMODORO_CONFIG.focusMs
+  private totalMs = DEFAULT_POMODORO_CONFIG.focusMs
   private completedFocus = 0
   private deadline: number | null = null
   private timer: NodeJS.Timeout | null = null
@@ -40,17 +50,25 @@ export class PomodoroController {
 
   constructor() {
     const stored = readJsonSetting<StoredPomodoro>(STORAGE_KEY)
-    if (stored) {
-      this.mode = stored.mode
-      this.remainingMs = stored.remainingMs
-      this.completedFocus = stored.completedFocus
-      if (stored.endsAt && stored.endsAt > Date.now()) {
-        this.deadline = stored.endsAt
-        this.startTimer()
-      } else if (stored.endsAt) {
-        const expected = durationFor(stored.mode)
-        this.remainingMs = stored.endsAt > Date.now() - STALE_PHASE_MS ? 0 : expected
-      }
+    if (!stored) return
+
+    this.config = sanitizePomodoroConfig(stored.config)
+    this.mode = stored.mode
+    this.remainingMs = Math.max(0, Number(stored.remainingMs) || 0)
+    this.totalMs = Math.max(
+      this.remainingMs,
+      Number(stored.totalMs) || durationFor(stored.mode, this.config)
+    )
+    this.completedFocus = Math.max(0, Number(stored.completedFocus) || 0)
+
+    if (stored.endsAt && stored.endsAt > Date.now()) {
+      this.deadline = stored.endsAt
+      this.startTimer()
+    } else if (stored.endsAt) {
+      const expected = durationFor(stored.mode, this.config)
+      const fresh = stored.endsAt > Date.now() - STALE_PHASE_MS
+      this.remainingMs = fresh ? 0 : expected
+      this.totalMs = expected
     }
   }
 
@@ -65,7 +83,9 @@ export class PomodoroController {
       running: this.deadline !== null,
       endsAt: this.deadline,
       remainingMs: this.deadline ? this.remainingMs : Math.max(0, this.remainingMs),
-      completedFocus: this.completedFocus
+      totalMs: this.totalMs,
+      completedFocus: this.completedFocus,
+      config: { ...this.config }
     }
   }
 
@@ -77,12 +97,14 @@ export class PomodoroController {
     if (this.deadline) return this.get()
 
     const mode: PomodoroMode = this.mode === 'idle' ? 'work' : this.mode
-    const remainingMs =
-      this.remainingMs > 0 && mode === this.mode ? this.remainingMs : durationFor(mode)
+    const restart = mode !== this.mode || this.remainingMs <= 0
+    if (restart) {
+      this.remainingMs = durationFor(mode, this.config)
+      this.totalMs = this.remainingMs
+    }
 
     this.mode = mode
-    this.remainingMs = remainingMs
-    this.deadline = Date.now() + remainingMs
+    this.deadline = Date.now() + this.remainingMs
     this.startTimer()
     this.persist()
     this.emit()
@@ -104,7 +126,33 @@ export class PomodoroController {
     this.deadline = null
     this.stopTimer()
     this.mode = 'idle'
-    this.remainingMs = FOCUS_MS
+    this.remainingMs = durationFor('work', this.config)
+    this.totalMs = this.remainingMs
+    this.persist()
+    this.emit()
+    return this.get()
+  }
+
+  /** Manual phase switch from the card: focus / short break / long break. */
+  setMode(mode: PomodoroMode): PomodoroSnapshot {
+    this.deadline = null
+    this.stopTimer()
+    this.mode = mode
+    this.remainingMs = durationFor(mode, this.config)
+    this.totalMs = this.remainingMs
+    this.persist()
+    this.emit()
+    return this.get()
+  }
+
+  /** Owner-edited phase lengths; applied to the next phase, or immediately while stopped. */
+  configure(patch: Partial<PomodoroConfig>): PomodoroSnapshot {
+    this.config = sanitizePomodoroConfig(patch, this.config)
+    if (!this.deadline) {
+      const mode = this.mode === 'idle' ? 'work' : this.mode
+      this.remainingMs = durationFor(mode, this.config)
+      this.totalMs = this.remainingMs
+    }
     this.persist()
     this.emit()
     return this.get()
@@ -143,13 +191,14 @@ export class PomodoroController {
 
     const nextMode: PomodoroMode =
       finished === 'work'
-        ? this.completedFocus % FOCUS_ROUNDS_BEFORE_LONG_BREAK === 0
+        ? this.completedFocus % this.config.roundsBeforeLongBreak === 0
           ? 'long_break'
           : 'short_break'
         : 'work'
 
     this.mode = nextMode
-    this.remainingMs = durationFor(nextMode)
+    this.remainingMs = durationFor(nextMode, this.config)
+    this.totalMs = this.remainingMs
     this.persist()
     this.notify(finished)
     this.emit()
@@ -169,8 +218,10 @@ export class PomodoroController {
     const stored: StoredPomodoro = {
       mode: this.mode,
       remainingMs: this.remainingMs,
+      totalMs: this.totalMs,
       completedFocus: this.completedFocus,
-      endsAt: this.deadline
+      endsAt: this.deadline,
+      config: this.config
     }
     writeJsonSetting(STORAGE_KEY, stored)
   }

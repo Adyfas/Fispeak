@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { ISLAND_GUTTER } from '@shared/island'
+import { ISLAND_GUTTER, ISLAND_NAV_GUTTER, RAIL_GAP, RAIL_WIDTH } from '@shared/island'
 import {
   clampCardRect,
   computeIslandGeometry,
   isPointInsideCard,
+  isPointInsideRail,
   toWindowPoint,
   type DisplayLike
 } from './layout'
@@ -59,6 +60,45 @@ describe('island geometry', () => {
       { width: 400, height: 300 }
     )
     expect(clamped).toEqual({ x: 0, y: 260, width: 400, height: 40 })
+  })
+
+  it('keeps the card centered with the rail gutter on both sides', () => {
+    const geometry = computeIslandGeometry({
+      display,
+      placement: 'notch',
+      card: { width: 760, height: 380 },
+      savedPosition: null,
+      nav: true
+    })
+    expect(geometry.bounds.width).toBe(760 + ISLAND_NAV_GUTTER * 2)
+    expect(geometry.cardRect.x).toBe(ISLAND_NAV_GUTTER)
+    // Window and card share the same center: shrinking stays centered on screen.
+    const cardCenter = geometry.bounds.x + geometry.cardRect.x + 760 / 2
+    expect(cardCenter).toBe(1512 / 2)
+  })
+})
+
+describe('feature rail hit testing', () => {
+  const cardRect = { x: 28, y: 0, width: 480, height: 400 }
+  const railLeft = cardRect.x + cardRect.width + RAIL_GAP
+
+  it('counts a point inside the rail', () => {
+    expect(isPointInsideRail({ x: railLeft + 4, y: 120 }, cardRect, RAIL_WIDTH, RAIL_GAP)).toBe(
+      true
+    )
+  })
+
+  it('counts the gap between card and rail as inside', () => {
+    // Otherwise hover would drop while the cursor crosses the 8 px gap.
+    expect(isPointInsideRail({ x: railLeft - 2, y: 120 }, cardRect, RAIL_WIDTH, RAIL_GAP)).toBe(
+      true
+    )
+  })
+
+  it('ignores points above or below the card', () => {
+    expect(isPointInsideRail({ x: railLeft + 4, y: 420 }, cardRect, RAIL_WIDTH, RAIL_GAP)).toBe(
+      false
+    )
   })
 })
 

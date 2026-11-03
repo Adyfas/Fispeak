@@ -3,15 +3,21 @@ import { ISLAND_STATES, type IslandState } from '@shared/api'
 import { nextPillState } from './pillStore'
 
 describe('pill state machine', () => {
-  it('keeps exactly the six spec states', () => {
+  it('keeps the spec states plus the compact prompt state', () => {
     expect([...ISLAND_STATES]).toEqual([
       'IDLE',
       'EXPANDED_TOOL',
       'TRANSLATE_ON',
+      'PROMPT_ON',
       'TRANSLATE_MINI',
       'ERROR_PILL',
       'HIDDEN'
     ])
+  })
+
+  it('does not collapse PROMPT_ON when the pointer leaves', () => {
+    expect(nextPillState('PROMPT_ON', 'hover-leave')).toBe('PROMPT_ON')
+    expect(nextPillState('PROMPT_ON', 'hover-enter')).toBe('PROMPT_ON')
   })
 
   it('expands on hover from IDLE and collapses back on leave', () => {

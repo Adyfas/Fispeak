@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import type { PomodoroSnapshot } from '@shared/api'
+import type { PomodoroConfig, PomodoroMode, PomodoroSnapshot } from '@shared/api'
+import { DEFAULT_POMODORO_CONFIG } from '@shared/pomodoro'
 import { getApi } from '@/lib/ipc'
 
 interface PomodoroStore {
@@ -8,6 +9,8 @@ interface PomodoroStore {
   start: () => Promise<void>
   pause: () => Promise<void>
   reset: () => Promise<void>
+  setMode: (mode: PomodoroMode) => Promise<void>
+  configure: (patch: Partial<PomodoroConfig>) => Promise<void>
   apply: (snapshot: PomodoroSnapshot) => void
 }
 
@@ -15,8 +18,10 @@ const initial: PomodoroSnapshot = {
   mode: 'idle',
   running: false,
   endsAt: null,
-  remainingMs: 25 * 60_000,
-  completedFocus: 0
+  remainingMs: DEFAULT_POMODORO_CONFIG.focusMs,
+  totalMs: DEFAULT_POMODORO_CONFIG.focusMs,
+  completedFocus: 0,
+  config: DEFAULT_POMODORO_CONFIG
 }
 
 export const usePomodoroStore = create<PomodoroStore>((set) => ({
@@ -35,6 +40,14 @@ export const usePomodoroStore = create<PomodoroStore>((set) => ({
   },
   reset: async () => {
     const snapshot = await getApi().pomodoro.reset()
+    set({ snapshot })
+  },
+  setMode: async (mode) => {
+    const snapshot = await getApi().pomodoro.setMode(mode)
+    set({ snapshot })
+  },
+  configure: async (patch) => {
+    const snapshot = await getApi().pomodoro.configure(patch)
     set({ snapshot })
   },
   apply: (snapshot) => set({ snapshot })

@@ -1,13 +1,13 @@
 import { create } from 'zustand'
-import type { Note } from '@shared/api'
+import type { ChecklistItem, Note } from '@shared/api'
 import { getApi } from '@/lib/ipc'
 
 interface NotesStore {
   notes: Note[]
   loading: boolean
   load: () => Promise<void>
-  add: (body: string) => Promise<void>
-  edit: (id: string, body: string) => Promise<void>
+  add: (body: string, items?: ChecklistItem[]) => Promise<void>
+  edit: (id: string, body: string, items?: ChecklistItem[]) => Promise<void>
   remove: (id: string) => Promise<void>
 }
 
@@ -23,12 +23,12 @@ export const useNotesStore = create<NotesStore>((set) => ({
       set({ loading: false })
     }
   },
-  add: async (body) => {
-    const note = await getApi().notes.create(body)
+  add: async (body, items) => {
+    const note = await getApi().notes.create(body, items)
     set((state) => ({ notes: [note, ...state.notes].slice(0, 50) }))
   },
-  edit: async (id, body) => {
-    const notes = await getApi().notes.update(id, body)
+  edit: async (id, body, items) => {
+    const notes = await getApi().notes.update(id, body, items)
     set({ notes })
   },
   remove: async (id) => {

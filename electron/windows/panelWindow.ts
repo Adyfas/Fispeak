@@ -4,8 +4,8 @@ import type { PanelTab } from '@shared/api'
 import { IPC } from '@shared/api'
 import { logger } from '../logger'
 
-const PANEL_WIDTH = 640
-const PANEL_HEIGHT = 480
+const PANEL_WIDTH = 880
+const PANEL_HEIGHT = 600
 
 export class PanelWindow {
   private window: BrowserWindow | null = null

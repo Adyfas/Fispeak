@@ -32,6 +32,23 @@ def test_auto_and_unknown_codes() -> None:
     assert languages.to_whisper("xx") is None
 
 
+def test_provider_language_names_and_tags_are_normalised() -> None:
+    """Cloud providers answer with BCP-47, FLORES or plain English names, not Whisper codes."""
+    assert languages.normalize("id") == "id"
+    assert languages.normalize("id-ID") == "id"
+    assert languages.normalize("ID_id") == "id"
+    assert languages.normalize("Indonesian") == "id"
+    assert languages.normalize("Bahasa Indonesia") == "id"
+    assert languages.normalize("eng_Latn") == "en"
+    assert languages.normalize("en-US") == "en"
+    assert languages.normalize("Mandarin") == "zh"
+    assert languages.normalize("auto") is None
+    assert languages.normalize("unknown") is None
+    assert languages.normalize("") is None
+    assert languages.normalize(None) is None
+    assert languages.normalize("tlh") is None
+
+
 def test_payload_shape_for_the_rest_endpoint() -> None:
     payload = languages.as_dict()
     assert payload["stt"] == languages.whisper_codes()

@@ -69,3 +69,42 @@ def test_same_language_is_a_no_op(mt_engine) -> None:
 def test_unsupported_language_is_rejected(mt_engine) -> None:
     with pytest.raises(ValueError):
         mt_engine.translate_with_meta("hello", "xx", "en")
+
+
+@requires_mt
+def test_translate_many_matches_single_calls(mt_engine) -> None:
+    sentences = [
+        "The microphone array picks up the speaker across the room.",
+        "Our roadmap includes offline captions for every language.",
+        "Please review the pull request before the standup.",
+    ]
+    batch = mt_engine.translate_many(sentences, "eng_Latn", "ind_Latn")
+    singles = [mt_engine.translate_with_meta(text, "eng_Latn", "ind_Latn") for text in sentences]
+    assert [text for text, _quality in batch] == [text for text, _quality in singles]
+    assert all(text for text, _quality in batch)
+
+
+@requires_mt
+def test_translate_many_handles_blank_and_same_language(mt_engine) -> None:
+    out = mt_engine.translate_many(["", "keep me", "also keep"], "eng_Latn", "eng_Latn")
+    assert out == [("", "ok"), ("keep me", "ok"), ("also keep", "ok")]
+
+
+@requires_mt
+def test_translate_many_is_faster_than_one_by_one(mt_engine) -> None:
+    # One CTranslate2 batch per window is the reason live subtitles keep up; keep it honest.
+    sentences = [
+        f"Batch translation keeps the live subtitles on time, sentence {index}."
+        for index in range(4)
+    ]
+    started = time.monotonic()
+    mt_engine.translate_many(sentences, "eng_Latn", "ind_Latn")
+    batched = time.monotonic() - started
+
+    singles_sentences = [sentence + " (single)" for sentence in sentences]
+    started = time.monotonic()
+    for sentence in singles_sentences:
+        mt_engine.translate_with_meta(sentence, "eng_Latn", "ind_Latn")
+    singles = time.monotonic() - started
+
+    assert batched < singles, f"batch {batched:.2f}s vs singles {singles:.2f}s"

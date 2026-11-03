@@ -9,15 +9,29 @@ import type { IslandState, PlacementMode } from './api'
  */
 export const ISLAND_CARD_SIZES: Record<IslandState, { width: number; height: number }> = {
   IDLE: { width: 330, height: 34 },
-  EXPANDED_TOOL: { width: 500, height: 300 },
-  TRANSLATE_ON: { width: 560, height: 360 },
-  TRANSLATE_MINI: { width: 260, height: 46 },
+  // Feature pages and the session page share one size: entering LISTEN/SPEAK must not resize
+  // the island, otherwise the rail slides out from under the cursor and clicks miss.
+  EXPANDED_TOOL: { width: 800, height: 480 },
+  TRANSLATE_ON: { width: 800, height: 480 },
+  // Prompt dictation stays open but compact: waveform + live text + Stop only.
+  PROMPT_ON: { width: 520, height: 132 },
+  TRANSLATE_MINI: { width: 340, height: 46 },
   ERROR_PILL: { width: 320, height: 46 },
   HIDDEN: { width: 330, height: 34 }
 }
 
 /** Transparent gutter around the card so the CSS drop-shadow is not clipped. */
 export const ISLAND_GUTTER = 28
+
+/**
+ * Side gutter for the feature pages. The vertical feature rail sits outside the card on the
+ * right, so the window only needs extra room on that side (left gutter stays `ISLAND_GUTTER`).
+ */
+export const ISLAND_NAV_GUTTER = 64 // 8 px gap + 48 px rail + 8 px breathing room
+export const RAIL_WIDTH = 48
+export const RAIL_GAP = 8
+export const RAIL_ITEM_SIZE = 44
+export const RAIL_ITEM_GAP = 12
 
 /** Margin from the top of the work area in floating placement (04-ui-spec §2). */
 export const FLOATING_TOP_MARGIN = 10
@@ -52,6 +66,11 @@ export const ISLAND_RADIUS = 20
 
 export function isExpandableState(state: IslandState): boolean {
   return state === 'IDLE' || state === 'TRANSLATE_MINI'
+}
+
+/** Feature pages show the vertical feature rail outside the card. */
+export function isNavState(state: IslandState): boolean {
+  return state === 'EXPANDED_TOOL' || state === 'TRANSLATE_ON'
 }
 
 export function isMode(state: IslandState, mode: PlacementMode): boolean {

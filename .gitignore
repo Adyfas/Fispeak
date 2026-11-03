@@ -40,6 +40,7 @@ native/**/.build
 
 # python sidecar
 .venv
+.venv-tts
 __pycache__
 *.pyc
 .pytest_cache
@@ -50,3 +51,26 @@ sidecar/**/build
 models
 sidecar.port
 sidecar.lock
+
+# local scratch / design files (not part of the app)
+*.excalidraw
+*.excalidraw.json
+*.drawio
+
+# AI agent + editor state (local only).
+# AGENTS.md is the shared contract and stays tracked; everything else is machine-specific.
+.opencode/
+.claude/
+.qwen/
+.aider/
+.commandcode/
+.lovable
+.cursorrules
+.windsurfrules
+CLAUDE.md
+QWEN.md
+!AGENTS.md
+
+# local symlink to the frontend design-skills package (points outside the repo)
+skills-src
+

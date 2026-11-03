@@ -7,8 +7,34 @@ type Level = 'debug' | 'info' | 'warn' | 'error'
 const debugEnabled = process.env.FISPEAK_DEBUG === '1' || !app.isPackaged
 let logDir: string | null = null
 
+/** Icons keep a long terminal scroll readable while the pipeline is running. */
+const ICONS: Record<string, string> = {
+  main: '🟣',
+  ipc: '🔌',
+  settings: '⚙️',
+  island: '🏝️',
+  window: '🪟',
+  translate: '🎧',
+  audio: '🎙️',
+  capture: '🎙️',
+  sck: '🔊',
+  sidecar: '☁️',
+  ws: '🔗',
+  engine: '🌍',
+  models: '📦',
+  db: '🗄️',
+  tts: '🗣️',
+  pomodoro: '⏱️',
+  tray: '🧭',
+  shortcuts: '⌨️'
+}
+
 function timestamp(): string {
   return new Date().toISOString()
+}
+
+function plainTime(): string {
+  return new Date().toTimeString().slice(0, 8) + '.' + String(new Date().getMilliseconds()).padStart(3, '0')
 }
 
 async function writeLine(line: string): Promise<void> {
@@ -26,11 +52,14 @@ async function writeLine(line: string): Promise<void> {
 
 function log(level: Level, scope: string, message: string, extra?: unknown): void {
   if (level === 'debug' && !debugEnabled) return
+  // The log file stays machine-readable JSON; the terminal gets a readable line.
   const payload = extra === undefined ? '' : ` ${safeJson(extra)}`
   const line = `{"ts":"${timestamp()}","lvl":"${level.toUpperCase()}","mod":"${scope}","msg":${JSON.stringify(message)}}${payload}`
-  if (level === 'error') console.error(line)
-  else if (level === 'warn') console.warn(line)
-  else console.log(line)
+  const icon = ICONS[scope] ?? '•'
+  const human = `[${plainTime()}] ${icon} ${scope}: ${message}${extra === undefined ? '' : ` ${safeJson(extra)}`}`
+  if (level === 'error') console.error(human)
+  else if (level === 'warn') console.warn(human)
+  else console.log(human)
   void writeLine(line)
 }
 

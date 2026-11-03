@@ -1,5 +1,10 @@
 import type { CardRect, PlacementMode } from '@shared/api'
-import { FLOATING_TOP_MARGIN, HOVER_TOLERANCE, ISLAND_GUTTER } from '@shared/island'
+import {
+  FLOATING_TOP_MARGIN,
+  HOVER_TOLERANCE,
+  ISLAND_GUTTER,
+  ISLAND_NAV_GUTTER
+} from '@shared/island'
 
 export interface Rect {
   x: number
@@ -40,9 +45,14 @@ export function computeIslandGeometry(options: {
   placement: PlacementMode
   card: Size
   savedPosition: Point | null
+  /** Feature pages need room for the vertical rail outside the card (both sides, symmetric). */
+  nav?: boolean
 }): IslandGeometry {
-  const { display, placement, card, savedPosition } = options
-  const width = card.width + ISLAND_GUTTER * 2
+  const { display, placement, card, savedPosition, nav = false } = options
+  // Symmetric gutters keep the card centered in the window at every size. That is what makes
+  // the shrink animation stay centered instead of collapsing toward the left edge first.
+  const side = nav ? ISLAND_NAV_GUTTER : ISLAND_GUTTER
+  const width = card.width + side * 2
   const height = card.height + ISLAND_GUTTER
 
   const anchorArea = placement === 'notch' ? display.bounds : display.workArea
@@ -54,8 +64,13 @@ export function computeIslandGeometry(options: {
 
   return {
     bounds: { x, y, width, height },
-    cardRect: { x: ISLAND_GUTTER, y: 0, width: card.width, height: card.height }
+    cardRect: { x: side, y: 0, width: card.width, height: card.height }
   }
+}
+
+/** Horizontal offset of the card inside a window of `windowWidth` (always centered). */
+export function centeredCardX(windowWidth: number, cardWidth: number): number {
+  return Math.max(0, Math.round((windowWidth - cardWidth) / 2))
 }
 
 /** Card rect reported by the renderer, clamped so it can never exceed the window. */
@@ -89,6 +104,31 @@ export function isPointInsideCard(
 
 export function toWindowPoint(point: Point, bounds: Rect): Point {
   return { x: point.x - bounds.x, y: point.y - bounds.y }
+}
+
+/**
+ * The vertical feature rail sits outside the card, flush with its top edge on the right.
+ * It is only interactive while the renderer reports it visible (`navVisible`), otherwise a
+ * click in the transparent gutter must fall through to the app underneath.
+ *
+ * The 8 px gap between card and rail counts as inside too: without it the hover state would
+ * drop for a frame while the cursor crosses the gap and the island would start collapsing.
+ */
+export function isPointInsideRail(
+  pointInWindow: Point,
+  cardRect: CardRect,
+  railWidth: number,
+  gap: number,
+  tolerance = HOVER_TOLERANCE
+): boolean {
+  const left = cardRect.x + cardRect.width - tolerance
+  const right = left + gap + railWidth + tolerance * 2
+  return (
+    pointInWindow.x >= left &&
+    pointInWindow.x <= right &&
+    pointInWindow.y >= cardRect.y - tolerance &&
+    pointInWindow.y <= cardRect.y + cardRect.height + tolerance
+  )
 }
 
 export function sameRect(a: Rect, b: Rect): boolean {

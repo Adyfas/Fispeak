@@ -19,7 +19,12 @@ export default defineConfig({
       alias: { '@shared': resolve('shared') }
     },
     build: {
-      rollupOptions: { input: { index: resolve('preload/index.ts') } }
+      rollupOptions: {
+        input: {
+          index: resolve('preload/index.ts'),
+          mic: resolve('preload/mic.ts')
+        }
+      }
     }
   },
   renderer: {
@@ -35,7 +40,8 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/index.html'),
-          panel: resolve('src/panel.html')
+          panel: resolve('src/panel.html'),
+          mic: resolve('src/mic.html')
         }
       }
     }

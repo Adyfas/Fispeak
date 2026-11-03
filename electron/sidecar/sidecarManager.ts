@@ -31,6 +31,10 @@ export class SidecarManager {
   private child: ChildProcess | null = null
   private status: SidecarStatus = 'stopped'
   private port: number | null = null
+  private refs = 0
+  private idleTimer: NodeJS.Timeout | null = null
+  /** 0 = stop immediately, >0 = keep warm for N ms, <0 = always on. */
+  private keepAliveMs = 0
 
   constructor(private readonly onStatus?: (status: SidecarStatus, detail?: SidecarStatusDetail) => void) {}
 
@@ -44,6 +48,36 @@ export class SidecarManager {
 
   isRunning(): boolean {
     return this.status === 'running'
+  }
+
+  setKeepAlive(ms: number): void {
+    this.keepAliveMs = ms
+  }
+
+  /** A translate session needs the sidecar: start it now and keep it warm while active. */
+  async acquire(): Promise<number | null> {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer)
+      this.idleTimer = null
+    }
+    this.refs += 1
+    return this.start()
+  }
+
+  /** The last consumer left: stop now or after the keep-alive window. */
+  release(): void {
+    this.refs = Math.max(0, this.refs - 1)
+    if (this.refs > 0) return
+    if (this.keepAliveMs < 0) return
+    if (this.idleTimer) clearTimeout(this.idleTimer)
+    if (this.keepAliveMs === 0) {
+      void this.stop()
+      return
+    }
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null
+      if (this.refs === 0) void this.stop()
+    }, this.keepAliveMs)
   }
 
   /** Start (or reuse) the sidecar. Resolves with the port it listens on. */
@@ -109,19 +143,37 @@ export class SidecarManager {
     return port
   }
 
+  /** Stop and start again - used when the socket stops answering pings. */
+  async restart(): Promise<number | null> {
+    await this.stop()
+    this.port = null
+    return this.start()
+  }
+
   /** Graceful stop: `/shutdown`, then SIGKILL after the grace period. */
   async stop(): Promise<void> {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer)
+      this.idleTimer = null
+    }
+    this.refs = 0
     const child = this.child
-    if (!child) {
-      this.setStatus('stopped')
-      return
+    const port = this.port
+
+    if (port !== null) {
+      try {
+        await this.post(`/shutdown`, HOST, port)
+        logger.info('sidecar', 'shutdown requested', { port })
+      } catch (error) {
+        logger.warn('sidecar', 'shutdown request failed', { error: String(error) })
+      }
     }
 
-    try {
-      await this.post(`/shutdown`, HOST, this.port ?? DEFAULT_PORT)
-      logger.info('sidecar', 'shutdown requested')
-    } catch (error) {
-      logger.warn('sidecar', 'shutdown request failed', { error: String(error) })
+    if (!child) {
+      // A reused sidecar has no child handle; `/shutdown` above is the only signal.
+      this.port = null
+      this.setStatus('stopped')
+      return
     }
 
     const exited = await this.waitForExit(SHUTDOWN_GRACE_MS)
@@ -130,6 +182,7 @@ export class SidecarManager {
       this.kill()
     }
     this.child = null
+    this.port = null
     this.setStatus('stopped')
   }
 
@@ -258,7 +311,9 @@ export class SidecarManager {
         } catch {
           // ignore
         }
-        if (process.env.FISPEAK_DEBUG === '1') process.stdout.write(`[sidecar] ${text}`)
+        // Always visible: the sidecar prints one readable line per pipeline step, which is what
+        // the owner watches while listening to a meeting.
+        process.stdout.write(text.endsWith('\n') ? text : `${text}\n`)
       })
     }
 

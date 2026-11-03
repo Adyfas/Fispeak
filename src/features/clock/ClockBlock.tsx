@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import logoFispeak from '@/assets/logo-fispeak.png'
 import { Block } from '@/components/Block'
 import { StatusDot, type StatusKind } from '@/components/StatusDot'
 import { formatClock, formatDate } from '@/lib/time'
@@ -19,7 +20,9 @@ export function ClockBlock({ status }: { status: StatusKind }): JSX.Element {
       bodyClassName="justify-center"
       slot={
         <span className="flex items-center gap-1 text-[9px] font-medium uppercase tracking-[0.08em] text-white/30">
-          <StatusDot status={status} /> fispeak
+          <img src={logoFispeak} alt="" className="h-3.5 w-auto" />
+          fispeak
+          {status === 'idle' ? null : <StatusDot status={status} />}
         </span>
       }
     >

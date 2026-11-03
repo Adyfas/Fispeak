@@ -86,12 +86,15 @@ heavy AI work happens in the Python sidecar.
 2. **Transport** — frames go to the Python sidecar over a local WebSocket. The renderer never
    talks to the sidecar directly; main broadcasts events to every window over IPC.
 3. **Speech to text** — a rolling VAD finds speech windows and an STT engine transcribes them:
-   `faster-whisper` locally, or an OpenAI-compatible API (OpenRouter, custom endpoint).
-4. **Translation** — `NLLB-200-distilled-600M` locally, or a remote engine (Ollama, OpenRouter,
-   or any OpenAI-compatible endpoint). Engines are swappable in Settings; the pipeline stays the
-   same.
-5. **Text to speech** — Kokoro-82M or a cloned Qwen3-TTS voice synthesises a WAV in the sidecar;
-   Electron plays it to the speaker, or to a virtual audio device so it can be heard in the call.
+   `faster-whisper` locally, or a remote API (Mistral, OpenAI, Groq, Deepgram, Together,
+   Cloudflare, custom endpoint). Without a language hint the remote engine detects the spoken
+   language per window, so LISTEN follows the meeting without a preselected language.
+4. **Translation** — `NLLB-200-distilled-600M` locally, or the chat model of the selected
+   provider (Mistral, OpenAI, Gemini, Groq, OpenRouter, Cloudflare, Together, Hugging Face,
+   Ollama, custom). The pipeline stays the same.
+5. **Text to speech** — Kokoro-82M/Qwen3-TTS locally, or the selected provider's speech API
+   (Mistral Voxtral TTS, OpenAI, Together). The sidecar writes a WAV; Electron plays it to the
+   speaker, or to a virtual audio device so it can be heard in the call.
 6. **Display** — the island renders subtitles, the live waveform, and the session state. The
    SQLite database keeps notes, settings, and transcript history.
 
@@ -102,15 +105,35 @@ demand and released when idle, which keeps RAM flat when fispeak is not being us
 ### Local or API engines
 
 fispeak ships with local engines and also speaks the OpenAI-compatible API, so you can pick the
-trade-off that fits your machine:
+trade-off that fits your machine. **Settings → AI Provider is one choice with one key**: the
+provider owns every task it offers, and any task it does not offer falls back to the local engine
+(the UI marks it `Fallback · Local`).
 
-| Task              | Local                 | API / remote                 | Notes                                  |
-| ----------------- | --------------------- | ---------------------------- | -------------------------------------- |
-| Speech to text    | `faster-whisper`      | OpenRouter, custom endpoint  | Remote STT sends audio to the provider |
-| Translation       | NLLB-200              | Ollama, OpenRouter, custom   | Remote MT is much lighter on CPU/RAM   |
-| Text to speech    | Kokoro-82M, Qwen3-TTS | —                            | TTS is local today                     |
-| Prompt AI upgrade | Off                   | OVHcloud, OpenRouter, Ollama | OVH works anonymously (rate-limited)   |
-| Meeting summary   | Planned               | Ollama, OpenRouter           | Phase 4                                |
+| Task              | Local                 | API / remote                                                      | Notes                                                  |
+| ----------------- | --------------------- | ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Speech to text    | `faster-whisper`      | Mistral, OpenAI, Groq, Deepgram, Together, Hugging Face, custom   | Remote STT uploads the meeting audio                   |
+| Translation       | NLLB-200              | Mistral, OpenAI, Gemini, Groq, OpenRouter, Cloudflare, Together, Hugging Face, Ollama, custom | Remote MT is much lighter on CPU/RAM |
+| Text to speech    | Kokoro-82M, Qwen3-TTS | Mistral Voxtral TTS, OpenAI, Together, custom                     | Mistral has no Indonesian preset voice — use a clone   |
+| Prompt AI upgrade | Off                   | Any provider with a chat model; OVHcloud works anonymously        | The same key and model as translation                  |
+| Meeting summary   | Planned               | Ollama, Groq, OpenRouter                                          | Phase 4                                                |
+
+Presets: **Free · Mistral** (one key for Listen, Translate, Speak and Prompt), **Free · Gemini**
+(translation + prompt; speech stays local), **Free · Groq** (speech + translation; speech stays
+local), **Paid · OpenAI**, and **Offline · Local**. Default on a fresh install is Local.
+
+Useful free tiers:
+
+- **Mistral** — Voxtral transcription + TTS and Mistral Small chat on one key. Voxtral TTS covers
+  35 languages including Indonesian, but Indonesian has no preset voice; clone your own.
+  Free mode rate-limits overlapping calls (HTTP 429), so fispeak serialises speech/translation
+  requests and retries with `Retry-After`.
+- **Groq** — `whisper-large-v3-turbo` speech and `openai/gpt-oss-120b` translation on one
+  OpenAI-compatible key. Around 8 hours of audio per day and 2,000 requests per day.
+- **Deepgram** — `nova-3` with `detect_language`; returns the detected language and a confidence
+  score, including Indonesian and English. New accounts include $200 of credit.
+- **Gemini** — free-tier chat for translation and prompting. Its speech adapters are not wired
+  yet, so Listen/Speak fall back to Local.
+- **OVHcloud** — anonymous prompt upgrade, two requests per minute, no key required.
 
 Local engines keep audio and transcripts on the machine and need no account or API key. Remote
 engines are a good fit when the machine cannot carry multi-GB models, or when CPU/GPU headroom is
@@ -127,10 +150,11 @@ provider; there is no telemetry and no analytics.
 | Renderer       | React 18, TypeScript (strict), Tailwind CSS v4, Zustand |
 | Database       | better-sqlite3 (WAL, local file)                        |
 | Sidecar        | Python 3.11, FastAPI/uvicorn, WebSocket                 |
-| Speech to text | faster-whisper (CTranslate2, int8, CPU) or remote API   |
-| Translation    | NLLB-200-distilled-600M (CT2 int8) or remote LLM        |
+| Speech to text | faster-whisper (CTranslate2, int8, CPU) or provider API |
+| Translation    | NLLB-200-distilled-600M (CT2 int8) or provider chat   |
+| Speech output  | Kokoro-82M ONNX / Qwen3-TTS clone or provider TTS     |
 | Text to speech | Kokoro-82M ONNX, Qwen3-TTS 0.6B (MLX)                   |
-| Remote engines | OpenAI-compatible: OpenRouter, OVHcloud, Ollama, custom |
+| Remote engines | OpenAI-compatible: Groq, OpenRouter, OVHcloud, Ollama, custom; Deepgram STT |
 | Tests          | Vitest + Testing Library, pytest                        |
 | Tooling        | pnpm 10, ESLint 9, Prettier                             |
 
@@ -200,7 +224,8 @@ If you use **local engines**, models are downloaded on demand into
 - Open the panel → **Download** tab → install the essential pack (Whisper + NLLB), or
 - install only the models you need from the same tab.
 
-If you only use **remote engines**, you do not need to download any model.
+If speech recognition and translation both run remotely, you do not need the Whisper/NLLB
+downloads. TTS is local today, so install a TTS model only if you use SPEAK.
 
 For a quick development setup you can also fetch the two core models directly:
 
@@ -240,7 +265,7 @@ downloaded separately; the Voice page explains what is missing if it is not inst
 electron/            Electron main process
   audio/             per-OS capture, resampling, native helper bridge
   db/                SQLite stores (notes, sessions, settings)
-  engine/            remote engines (Ollama, OpenRouter, custom) + prompt AI
+  engine/            unified provider client (catalogue, keys, test, prompt AI)
   island/            island window, layout, hover/click-through logic
   models/            model registry + resumable downloader
   sidecar/           sidecar process manager + WebSocket bridge
@@ -266,6 +291,8 @@ scripts/             dev tooling
 - [x] On-demand sidecar lifecycle (RAM stays flat when idle)
 - [x] Local STT + MT pipeline (verified on macOS)
 - [x] Remote OpenAI-compatible engines (OpenRouter, Ollama, custom)
+- [x] Free remote speech recognition (Groq, Deepgram) with automatic language detection
+- [x] One-provider catalogue (Mistral, OpenAI, Gemini, Groq, Cloudflare, Deepgram, OpenRouter, Together, Hugging Face, Ollama, custom) with one key, per-task models and Local fallback
 - [x] TTS: Kokoro-82M and Qwen3-TTS voice cloning
 - [x] Prompt page with optional AI prompt upgrade
 - [ ] Windows (WASAPI) and Linux (Pulse/PipeWire) audio capture

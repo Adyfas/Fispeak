@@ -157,6 +157,10 @@ class SttEngine:
 
     # -- lifecycle -------------------------------------------------------------------------
     @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    @property
     def status(self) -> dict[str, object]:
         return model_status(self._models_dir)
 
@@ -221,6 +225,7 @@ class SttEngine:
         language: str | None = None,
         beam_size: int = 2,
         offset_ms: int = 0,
+        vad_filter: bool = True,
     ) -> TranscriptResult:
         self.ensure_loaded()
         audio = np.asarray(samples, dtype=np.float32).reshape(-1)
@@ -232,8 +237,8 @@ class SttEngine:
                 audio,
                 language=self._language_for_call(language),
                 beam_size=beam_size,
-                vad_filter=True,
-                vad_parameters={"min_silence_duration_ms": 450},
+                vad_filter=vad_filter,
+                **({"vad_parameters": {"min_silence_duration_ms": 450}} if vad_filter else {}),
                 condition_on_previous_text=False,
             )
             raw = list(segments)

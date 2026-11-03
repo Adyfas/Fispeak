@@ -33,6 +33,7 @@ class ModelMissingError(RuntimeError):
 class TranslationEngine(Protocol):
     def load(self, models_dir: Path) -> None: ...
     def translate(self, text: str, src: str, tgt: str) -> str: ...
+    def translate_many(self, texts: list[str], src: str, tgt: str) -> list[tuple[str, str]]: ...
     def translate_stream(self, text: str, src: str, tgt: str) -> AsyncIterator[str]: ...
     @property
     def supported_languages(self) -> list[str]: ...
@@ -172,6 +173,64 @@ class NLLBCT2Engine:
 
     def translate_stream(self, text: str, src: str, tgt: str) -> AsyncIterator[str]:
         raise NotImplementedError("streaming MT is Phase 4; the WS pipeline emits one event per sentence")
+
+    def translate_many(self, texts: list[str], src: str, tgt: str) -> list[tuple[str, str]]:
+        """Translate a window's sentences in one CTranslate2 batch.
+
+        A 6 s window usually yields 2-3 sentences. Translating them one by one costs the
+        encoder/decoder startup per sentence (measured 1.4-1.6 s each); one batch is ~2 s total,
+        which is what keeps the pipeline ahead of realtime.
+        """
+        if not texts:
+            return []
+
+        src_flores = languages.to_flores(src)
+        tgt_flores = languages.to_flores(tgt)
+        if not src_flores:
+            raise ValueError(f"unsupported source language: {src!r}")
+        if not tgt_flores:
+            raise ValueError(f"unsupported target language: {tgt!r}")
+
+        sources = [text.strip() for text in texts]
+        if src_flores == tgt_flores:
+            return [(source, "ok") for source in sources]
+
+        results: list[tuple[str, str] | None] = [None] * len(sources)
+        pending: list[tuple[int, str]] = []
+        for index, source in enumerate(sources):
+            if not source:
+                results[index] = ("", "ok")
+                continue
+            cached = self._cache.get((source, src_flores, tgt_flores))
+            if cached is not None:
+                results[index] = (cached, "ok")
+                continue
+            pending.append((index, source))
+
+        if pending:
+            self.load()
+            assert self._tokenizer is not None
+            with self._lock:
+                self._tokenizer.src_lang = src_flores
+                token_counts = {index: len(self._tokenizer.encode(source)) for index, source in pending}
+
+            short = [(index, source) for index, source in pending if token_counts[index] <= MAX_TOKENS]
+            oversized = [(index, source) for index, source in pending if token_counts[index] > MAX_TOKENS]
+
+            if short:
+                with self._lock:
+                    self._tokenizer.src_lang = src_flores
+                    outputs = self._batch([source for _, source in short], tgt_flores)
+                for (index, source), output in zip(short, outputs):
+                    self._cache.put((source, src_flores, tgt_flores), output)
+                    results[index] = (output, "warn" if _looks_untranslated(source, output) else "ok")
+
+            for index, source in oversized:
+                output = self._translate_uncached(source, src_flores, tgt_flores)
+                self._cache.put((source, src_flores, tgt_flores), output)
+                results[index] = (output, "warn" if _looks_untranslated(source, output) else "ok")
+
+        return [item if item is not None else ("", "ok") for item in results]
 
     def _translate_uncached(self, text: str, src_flores: str, tgt_flores: str) -> str:
         assert self._tokenizer is not None and self._translator is not None

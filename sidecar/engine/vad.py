@@ -6,7 +6,8 @@ frame stream into speech windows:
 * dynamic RMS threshold = max(floor, 25% of the p95 of the last 10 s)
 * 4 s of trailing silence closes a window
 * windows shorter than 3 s of speech are dropped (greetings, coughs)
-* a window never grows past 30 s
+* a window never grows past 15 s (CORRECTION 2026-10-22 in 06-stt-engine.md: 30 s made the
+  first transcript of a continuous speaker arrive after half a minute)
 * the next window keeps 0.8 s of overlap so the first word is not clipped
 
 Whisper's own Silero `vad_filter` still runs inside `stt.py`; this is the cheap pre-filter that
@@ -77,6 +78,21 @@ class RollingVadBuffer:
         if not self._history:
             return self.rms_floor
         return max(self.rms_floor, 0.25 * float(np.percentile(self._history, 95)))
+
+    def configure(
+        self,
+        *,
+        silence_ms: int | None = None,
+        min_speech_ms: int | None = None,
+        max_window_ms: int | None = None,
+    ) -> None:
+        """Live-tune the window limits (Electron sends the quality preset per session)."""
+        if silence_ms is not None:
+            self.silence_frames = max(2, int(silence_ms) // self.frame_ms)
+        if min_speech_ms is not None:
+            self.min_speech_frames = max(1, int(min_speech_ms) // self.frame_ms)
+        if max_window_ms is not None:
+            self.max_frames = max(1, int(max_window_ms) // self.frame_ms)
 
     # -- public API ------------------------------------------------------------------------
     def push(self, frame: np.ndarray) -> list[AudioWindow]:

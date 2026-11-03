@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from sidecar import config
 from sidecar.engine import languages
 from sidecar.engine.vad import AudioWindow, RollingVadBuffer
 
@@ -31,6 +32,18 @@ class StreamConfig:
     beam_size: int = 2
     whisper_model: str = "small"
     mode: str = "translate_on"
+    # The application sends "auto" (resolved per provider in ws.py). A bare client that never
+    # sends stt_mode keeps the historical batch behaviour.
+    stt_mode: str = "batch"
+    retranscribe_ms: int = 900
+    commit_min_words: int = 12
+    commit_silence_ms: int = 400
+    # listen = system audio only, speak = microphone only, both = accept every frame.
+    capture_mode: str = "both"
+    # Window limits; Electron overrides them with the "quality" preset before audio starts.
+    vad_max_window_ms: int = config.VAD_MAX_WINDOW_MS
+    vad_silence_ms: int = config.VAD_SILENCE_FRAMES * config.FRAME_MS
+    vad_min_speech_ms: int = config.VAD_MIN_SPEECH_FRAMES * config.FRAME_MS
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -42,6 +55,14 @@ class StreamConfig:
             "beam_size": self.beam_size,
             "whisper_model": self.whisper_model,
             "mode": self.mode,
+            "stt_mode": self.stt_mode,
+            "capture_mode": self.capture_mode,
+            "retranscribe_ms": self.retranscribe_ms,
+            "commit_min_words": self.commit_min_words,
+            "commit_silence_ms": self.commit_silence_ms,
+            "vad_max_window_ms": self.vad_max_window_ms,
+            "vad_silence_ms": self.vad_silence_ms,
+            "vad_min_speech_ms": self.vad_min_speech_ms,
         }
 
 
@@ -55,6 +76,16 @@ class AudioRouter:
             TAG_YOU: RollingVadBuffer(TAG_YOU),
             TAG_REMOTE: RollingVadBuffer(TAG_REMOTE),
         }
+        self.apply_config()
+
+    def apply_config(self) -> None:
+        """Push the current window limits into both buffers (called on every config frame)."""
+        for buffer in self._buffers.values():
+            buffer.configure(
+                silence_ms=self.config.vad_silence_ms,
+                min_speech_ms=self.config.vad_min_speech_ms,
+                max_window_ms=self.config.vad_max_window_ms,
+            )
 
     def push(self, tag: str, samples: np.ndarray) -> list[AudioWindow]:
         buffer = self._buffers.get(tag)
@@ -69,10 +100,17 @@ class AudioRouter:
         return windows
 
     def reset(self) -> None:
-        self._buffers = {
-            TAG_YOU: RollingVadBuffer(TAG_YOU),
-            TAG_REMOTE: RollingVadBuffer(TAG_REMOTE),
-        }
+        self.__post_init__()
+
+    def reset_tag(self, tag: str) -> None:
+        """Drop buffered audio for one stream (used when switching LISTEN <-> SPEAK)."""
+        if tag in self._buffers:
+            self._buffers[tag] = RollingVadBuffer(tag)
+            self._buffers[tag].configure(
+                silence_ms=self.config.vad_silence_ms,
+                min_speech_ms=self.config.vad_min_speech_ms,
+                max_window_ms=self.config.vad_max_window_ms,
+            )
 
     def target_language(self, tag: str) -> str | None:
         """FLORES code the given stream should be translated into (None = no translation)."""
@@ -83,6 +121,9 @@ class AudioRouter:
 
     def target_language_code(self, tag: str) -> str | None:
         """UI language code the given stream should be translated into (None = no translation)."""
+        # Prompt dictation: transcribe only, never translate (and never load MT).
+        if self.config.mode == "stt_only":
+            return None
         if tag == TAG_REMOTE:
             code = self.config.my_lang
         elif tag == TAG_YOU:
